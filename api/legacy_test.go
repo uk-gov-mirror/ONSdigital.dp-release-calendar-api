@@ -161,15 +161,8 @@ func TestLegacyHandlerForwardsToZebedee(t *testing.T) {
 	if backendCall.rawQuery != "uri=%2Frelease%2Fadoption&lang=cy" {
 		t.Errorf("backend query: got %q, want %q", backendCall.rawQuery, "uri=%2Frelease%2Fadoption&lang=cy")
 	}
-	for _, name := range []string{"Authorization", "X-Florence-Token"} {
-		if got := backendCall.header.Get(name); got != "Bearer test-token" {
-			t.Errorf("backend %s: got %q, want %q", name, got, "Bearer test-token")
-		}
-	}
-	parts := strings.Split(backendCall.header.Get(dprequest.RequestHeaderKey), ",")
-	if len(parts) != 2 || parts[0] != requestID || len(parts[1]) != len(requestID)/2 {
-		t.Errorf("backend request ID: got %q, want %q followed by a generated hop ID", backendCall.header.Get(dprequest.RequestHeaderKey), requestID)
-	}
+	assertBearerHeaders(t, backendCall.header, "Bearer test-token", "backend")
+	assertExtendedRequestID(t, backendCall.header, requestID, "backend")
 	for _, name := range []string{"traceparent", "Content-Type", "Cookie", "X-Client-Only", dprequest.CollectionIDHeaderKey} {
 		if got := backendCall.header.Get(name); got != "" {
 			t.Errorf("backend %s: got %q, want no copied header", name, got)
@@ -185,15 +178,8 @@ func TestLegacyHandlerForwardsToZebedee(t *testing.T) {
 	if descriptionCall.method != http.MethodGet || descriptionCall.path != "/v1/data/test-collection" || descriptionCall.rawQuery != "uri=%2Fdoc%2F1&description&lang=cy" {
 		t.Errorf("description lookup: got %s %s?%s, want GET /v1/data/test-collection?uri=%%2Fdoc%%2F1&description&lang=cy", descriptionCall.method, descriptionCall.path, descriptionCall.rawQuery)
 	}
-	for _, name := range []string{"Authorization", "X-Florence-Token"} {
-		if got := descriptionCall.header.Get(name); got != "Bearer test-token" {
-			t.Errorf("description lookup %s: got %q, want %q", name, got, "Bearer test-token")
-		}
-	}
-	parts = strings.Split(descriptionCall.header.Get(dprequest.RequestHeaderKey), ",")
-	if len(parts) != 2 || parts[0] != requestID || len(parts[1]) != len(requestID)/2 {
-		t.Errorf("description lookup request ID: got %q, want %q followed by a generated hop ID", descriptionCall.header.Get(dprequest.RequestHeaderKey), requestID)
-	}
+	assertBearerHeaders(t, descriptionCall.header, "Bearer test-token", "description lookup")
+	assertExtendedRequestID(t, descriptionCall.header, requestID, "description lookup")
 	if got := descriptionCall.header.Get("traceparent"); got != "" {
 		t.Errorf("description lookup traceparent: got %q, want no copied header", got)
 	}
@@ -211,16 +197,12 @@ func TestLegacyHandlerForwardsToZebedee(t *testing.T) {
 		if backendCall.method != http.MethodGet || backendCall.path != "/v1/data" || backendCall.rawQuery != "uri=%2Frelease%2Fadoption&lang=en" {
 			t.Errorf("backend request: got %s %s?%s, want GET /v1/data?uri=%%2Frelease%%2Fadoption&lang=en", backendCall.method, backendCall.path, backendCall.rawQuery)
 		}
-		for _, name := range []string{"Authorization", "X-Florence-Token"} {
-			if got := backendCall.header.Get(name); got != "Bearer cookie-token" {
-				t.Errorf("backend %s: got %q, want %q", name, got, "Bearer cookie-token")
-			}
-		}
+		assertBearerHeaders(t, backendCall.header, "Bearer cookie-token", "backend")
 		generatedID := request.Header.Get(dprequest.RequestHeaderKey)
-		parts := strings.Split(backendCall.header.Get(dprequest.RequestHeaderKey), ",")
-		if len(generatedID) != 16 || len(parts) != 2 || parts[0] != generatedID || len(parts[1]) != len(generatedID)/2 {
-			t.Errorf("backend request ID: got %q, want generated inbound ID %q followed by a hop ID", backendCall.header.Get(dprequest.RequestHeaderKey), generatedID)
+		if len(generatedID) != 16 {
+			t.Errorf("generated inbound request ID: got %q, want 16 characters", generatedID)
 		}
+		assertExtendedRequestID(t, backendCall.header, generatedID, "backend")
 		if got := backendCall.header.Get("Cookie"); got != "" {
 			t.Errorf("backend Cookie: got %q, want no forwarded cookie", got)
 		}
@@ -228,4 +210,22 @@ func TestLegacyHandlerForwardsToZebedee(t *testing.T) {
 			t.Errorf("additional web lookups: got %d, want 0", got)
 		}
 	})
+}
+
+func assertBearerHeaders(t *testing.T, header http.Header, want, target string) {
+	t.Helper()
+	for _, name := range []string{"Authorization", "X-Florence-Token"} {
+		if got := header.Get(name); got != want {
+			t.Errorf("%s %s: got %q, want %q", target, name, got, want)
+		}
+	}
+}
+
+func assertExtendedRequestID(t *testing.T, header http.Header, incomingID, target string) {
+	t.Helper()
+	got := header.Get(dprequest.RequestHeaderKey)
+	parts := strings.Split(got, ",")
+	if len(parts) != 2 || parts[0] != incomingID || len(parts[1]) != len(incomingID)/2 {
+		t.Errorf("%s request ID: got %q, want %q followed by a generated hop ID", target, got, incomingID)
+	}
 }
